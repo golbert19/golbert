@@ -1,0 +1,42 @@
+#!/bin/bash
+set -e
+if [ "$EUID" -ne 0 ]; then echo "Usa sudo"; exit 1; fi
+echo "Instalando Golbert19..."
+apt update -qq && apt install -y qemu-kvm libvirt-daemon-system virtinst python3-pip python3-venv nginx -qq
+systemctl enable --now libvirtd
+mkdir -p /opt/golbert && cd /opt/golbert
+python3 -m venv venv
+./venv/bin/pip install -q fastapi uvicorn libvirt-python psutil
+wget -q -O app.py https://raw.githubusercontent.com/golbert19/golbert/main/agent.py
+wget -q -O panel.html https://raw.githubusercontent.com/golbert19/golbert/main/panel.html
+
+cat > /etc/systemd/system/golbert.service <<EOF
+[Unit]
+Description=Golbert API
+After=libvirtd.service
+[Service]
+WorkingDirectory=/opt/golbert
+ExecStart=/opt/golbert/venv/bin/uvicorn app:app --host 0.0.0.0 --port 8443
+Restart=always
+[Install]
+WantedBy=multi-user.target
+EOF
+
+cat > /etc/nginx/sites-enabled/golbert <<EOF
+server {
+ listen 3000;
+ root /opt/golbert;
+ index panel.html;
+ location / { try_files \$uri /panel.html; }
+}
+EOF
+systemctl restart nginx
+systemctl daemon-reload
+systemctl enable --now golbert
+
+IP=$(hostname -I | awk '{print $1}')
+echo "----------------------------------"
+echo "✅ Golbert Instalado"
+echo "API: http://$IP:8443/docs"
+echo "PANEL WEB: http://$IP:3000"
+echo "----------------------------------"
