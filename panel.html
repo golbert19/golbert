@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Golbert VPS Control</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#0f0f0f] text-white min-h-screen">
+<div class="max-w-6xl mx-auto p-6">
+  <h1 class="text-3xl font-bold">⚡ Golbert VPS</h1>
+  <p class="text-gray-400 mb-6">Panel de Control - golbert19</p>
+
+  <div class="grid grid-cols-3 gap-4 mb-8">
+    <div class="bg-zinc-900 p-4 rounded-xl"><p class="text-gray-400 text-sm">CPU</p><p id="cpu" class="text-2xl font-bold">--%</p></div>
+    <div class="bg-zinc-900 p-4 rounded-xl"><p class="text-gray-400 text-sm">RAM</p><p id="ram" class="text-2xl font-bold">--%</p></div>
+    <div class="bg-zinc-900 p-4 rounded-xl"><p class="text-gray-400 text-sm">VPS Activos</p><p id="count" class="text-2xl font-bold">0</p></div>
+  </div>
+
+  <div class="bg-zinc-900 p-6 rounded-xl mb-6">
+    <h2 class="font-bold mb-4">Crear nuevo VPS</h2>
+    <div class="flex gap-2 flex-wrap">
+      <input id="name" placeholder="Nombre (opcional)" class="bg-zinc-800 p-2 rounded">
+      <input id="vcpu" type="number" value="1" class="bg-zinc-800 p-2 rounded w-20" placeholder="vCPU">
+      <input id="ram" type="number" value="1024" class="bg-zinc-800 p-2 rounded w-24" placeholder="RAM MB">
+      <input id="disk" type="number" value="20" class="bg-zinc-800 p-2 rounded w-20" placeholder="GB">
+      <button onclick="createVM()" class="bg-white text-black px-6 py-2 rounded font-bold">+ Crear</button>
+    </div>
+  </div>
+
+  <div id="vms" class="grid gap-3"></div>
+</div>
+
+<script>
+const API = window.location.origin.replace(':3000',':8443');
+async function load(){
+  const s = await fetch(API+'/stats').then(r=>r.json());
+  document.getElementById('cpu').innerText = s.cpu+'%';
+  document.getElementById('ram').innerText = Math.round(s.ram.percent)+'%';
+  const vms = await fetch(API+'/vms').then(r=>r.json());
+  document.getElementById('count').innerText = vms.length;
+  document.getElementById('vms').innerHTML = vms.map(v=>`
+    <div class="bg-zinc-900 p-4 rounded-xl flex justify-between items-center">
+      <div><p class="font-bold">${v.name}</p><p class="text-sm text-gray-400">${v.vcpu} vCPU - ${v.ram_mb} MB - Estado: ${v.state==1?'ON':'OFF'}</p></div>
+      <div class="flex gap-2">
+        <button onclick="action('${v.name}','start')" class="bg-green-600 px-3 py-1 rounded">ON</button>
+        <button onclick="action('${v.name}','stop')" class="bg-yellow-600 px-3 py-1 rounded">OFF</button>
+        <button onclick="action('${v.name}','reboot')" class="bg-blue-600 px-3 py-1 rounded">Reboot</button>
+        <button onclick="action('${v.name}','delete')" class="bg-red-600 px-3 py-1 rounded">Borrar</button>
+      </div>
+    </div>
+  `).join('');
+}
+async function createVM(){
+  const body = {name: document.getElementById('name').value || null, vcpu: parseInt(document.getElementById('vcpu').value), ram: parseInt(document.getElementById('ram').value), disk: parseInt(document.getElementById('disk').value)};
+  await fetch(API+'/vms', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  load();
+}
+async function action(name, act){ await fetch(`${API}/vms/${name}/${act}`, {method:'POST'}); setTimeout(load, 1000); }
+load(); setInterval(load, 5000);
+</script>
+</body>
+</html>
