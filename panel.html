@@ -1,62 +1,37 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Golbert VPS Control</title>
-<script src="https://cdn.tailwindcss.com"></script>
-</head>
-<body class="bg-[#0f0f0f] text-white min-h-screen">
-<div class="max-w-6xl mx-auto p-6">
-  <h1 class="text-3xl font-bold">⚡ Golbert VPS</h1>
-  <p class="text-gray-400 mb-6">Panel de Control - golbert19</p>
-
-  <div class="grid grid-cols-3 gap-4 mb-8">
-    <div class="bg-zinc-900 p-4 rounded-xl"><p class="text-gray-400 text-sm">CPU</p><p id="cpu" class="text-2xl font-bold">--%</p></div>
-    <div class="bg-zinc-900 p-4 rounded-xl"><p class="text-gray-400 text-sm">RAM</p><p id="ram" class="text-2xl font-bold">--%</p></div>
-    <div class="bg-zinc-900 p-4 rounded-xl"><p class="text-gray-400 text-sm">VPS Activos</p><p id="count" class="text-2xl font-bold">0</p></div>
-  </div>
-
-  <div class="bg-zinc-900 p-6 rounded-xl mb-6">
-    <h2 class="font-bold mb-4">Crear nuevo VPS</h2>
-    <div class="flex gap-2 flex-wrap">
-      <input id="name" placeholder="Nombre (opcional)" class="bg-zinc-800 p-2 rounded">
-      <input id="vcpu" type="number" value="1" class="bg-zinc-800 p-2 rounded w-20" placeholder="vCPU">
-      <input id="ram" type="number" value="1024" class="bg-zinc-800 p-2 rounded w-24" placeholder="RAM MB">
-      <input id="disk" type="number" value="20" class="bg-zinc-800 p-2 rounded w-20" placeholder="GB">
-      <button onclick="createVM()" class="bg-white text-black px-6 py-2 rounded font-bold">+ Crear</button>
-    </div>
-  </div>
-
-  <div id="vms" class="grid gap-3"></div>
+<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Golbert PRO</title><script src="https://cdn.tailwindcss.com"></script></head>
+<body class="bg-black text-white min-h-screen flex items-center justify-center">
+<div id="login" class="bg-zinc-900 p-8 rounded-2xl w-96">
+<h1 class="text-2xl font-bold mb-6">Golbert PRO Login</h1>
+<input id="email" placeholder="admin@golbert.com" class="w-full bg-zinc-800 p-3 rounded mb-2">
+<input id="pass" type="password" placeholder="admin123" class="w-full bg-zinc-800 p-3 rounded mb-4">
+<button onclick="doLogin()" class="w-full bg-white text-black p-3 rounded font-bold">Entrar</button>
+<p class="text-xs text-gray-500 mt-4">Demo: admin@golbert.com / admin123</p>
 </div>
-
+<div id="dash" class="hidden max-w-6xl w-full p-6">
+<div class="flex justify-between items-center mb-6"><h1 class="text-3xl font-bold">Golbert PRO</h1><button onclick="logout()" class="text-sm text-gray-400">Salir</button></div>
+<div class="grid grid-cols-3 gap-3 mb-6" id="plans"></div>
+<div class="bg-zinc-900 p-4 rounded-xl mb-6 flex gap-2"><select id="plan" class="bg-zinc-800 p-2 rounded"><option value="basic">Basic $5 - 1vCPU/1GB/20GB</option><option value="medium">Medium $10 - 2vCPU/2GB/40GB</option><option value="pro">Pro $20 - 4vCPU/4GB/80GB</option></select><button onclick="createVM()" class="bg-white text-black px-6 py-2 rounded font-bold">+ Crear VPS</button></div>
+<div id="vms" class="grid gap-3"></div>
+</div>
 <script>
-const API = window.location.origin.replace(':3000',':8443');
-async function load(){
-  const s = await fetch(API+'/stats').then(r=>r.json());
-  document.getElementById('cpu').innerText = s.cpu+'%';
-  document.getElementById('ram').innerText = Math.round(s.ram.percent)+'%';
-  const vms = await fetch(API+'/vms').then(r=>r.json());
-  document.getElementById('count').innerText = vms.length;
-  document.getElementById('vms').innerHTML = vms.map(v=>`
-    <div class="bg-zinc-900 p-4 rounded-xl flex justify-between items-center">
-      <div><p class="font-bold">${v.name}</p><p class="text-sm text-gray-400">${v.vcpu} vCPU - ${v.ram_mb} MB - Estado: ${v.state==1?'ON':'OFF'}</p></div>
-      <div class="flex gap-2">
-        <button onclick="action('${v.name}','start')" class="bg-green-600 px-3 py-1 rounded">ON</button>
-        <button onclick="action('${v.name}','stop')" class="bg-yellow-600 px-3 py-1 rounded">OFF</button>
-        <button onclick="action('${v.name}','reboot')" class="bg-blue-600 px-3 py-1 rounded">Reboot</button>
-        <button onclick="action('${v.name}','delete')" class="bg-red-600 px-3 py-1 rounded">Borrar</button>
-      </div>
-    </div>
-  `).join('');
+const API = location.origin.replace(':3000',':8443');
+let TOKEN = localStorage.getItem('golbert_token');
+if(TOKEN) showDash();
+async function doLogin(){
+  const res = await fetch(API+'/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value,password:pass.value})});
+  const data = await res.json(); if(!res.ok) return alert(data.detail);
+  TOKEN = data.token; localStorage.setItem('golbert_token',TOKEN); showDash();
 }
-async function createVM(){
-  const body = {name: document.getElementById('name').value || null, vcpu: parseInt(document.getElementById('vcpu').value), ram: parseInt(document.getElementById('ram').value), disk: parseInt(document.getElementById('disk').value)};
-  await fetch(API+'/vms', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
-  load();
+function showDash(){ login.classList.add('hidden'); dash.classList.remove('hidden'); loadPlans(); loadVMS(); }
+function logout(){ localStorage.removeItem('golbert_token'); location.reload(); }
+async function loadPlans(){
+  const plans = await fetch(API+'/plans').then(r=>r.json());
+  document.getElementById('plans').innerHTML = Object.entries(plans).map(([k,v])=>`<div class="bg-zinc-900 p-4 rounded-xl"><p class="font-bold">${k}</p><p class="text-sm text-gray-400">${v.vcpu} vCPU / ${v.ram}MB / ${v.disk}GB</p><p class="text-green-400 font-bold">$${v.price}/mes</p></div>`).join('');
 }
-async function action(name, act){ await fetch(`${API}/vms/${name}/${act}`, {method:'POST'}); setTimeout(load, 1000); }
-load(); setInterval(load, 5000);
-</script>
-</body>
-</html>
+async function loadVMS(){
+  const vms = await fetch(API+'/vms',{headers:{Authorization:'Bearer '+TOKEN}}).then(r=>r.json());
+  document.getElementById('vms').innerHTML = vms.map(v=>`<div class="bg-zinc-900 p-4 rounded-xl flex justify-between"><div><b>${v.name}</b><p class="text-sm text-gray-400">${v.vcpu} vCPU - ${v.ram}MB</p></div><div class="flex gap-2"><button onclick="act('${v.name}','start')" class="bg-green-600 px-3 py-1 rounded">ON</button><button onclick="act('${v.name}','stop')" class="bg-yellow-600 px-3 py-1 rounded">OFF</button><button onclick="act('${v.name}','delete')" class="bg-red-600 px-3 py-1 rounded">X</button></div></div>`).join('') || '<p class="text-gray-500">No tienes VPS, crea uno</p>';
+}
+async function createVM(){ await fetch(API+'/vms',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+TOKEN},body:JSON.stringify({plan:document.getElementById('plan').value})}); loadVMS(); }
+async function act(n,a){ await fetch(`${API}/vms/${n}/${a}`,{method:'POST',headers:{Authorization:'Bearer '+TOKEN}}); setTimeout(loadVMS,1000); }
+</script></body></html>
