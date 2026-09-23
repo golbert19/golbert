@@ -1,0 +1,68 @@
+#!/bin/bash
+# Golbert-Node v5.1 CONECTADO - golbert19
+set -e
+if [ "$EUID" -ne 0 ]; then echo "Usa sudo"; exit 1; fi
+read -p "Pega la IP de tu PANEL principal (ej: 10.0.0.1): " PANEL_IP
+read -p "Pega tu Token de Nodo (pon golbert-admin-123): " TOKEN
+
+echo "=== Instalando Golbert-Node Conectado a $PANEL_IP ==="
+apt update -qq
+apt install -y dropbear stunnel4 python3-pip python3-fastapi uvicorn cmake screen openvpn -qq
+pip3 install fastapi uvicorn websockets -q
+
+# Dropbear + Stunnel + BadVPN (igual que antes resumido)
+sed -i 's/NO_START=1/NO_START=0/' /etc/default/dropbear; sed -i 's/DROPBEAR_PORT=22/DROPBEAR_PORT=444/' /etc/default/dropbear
+echo 'DROPBEAR_EXTRA_ARGS="-p 443 -p 444"' >> /etc/default/dropbear; systemctl restart dropbear
+cat > /etc/stunnel/stunnel.conf <<EOF
+cert = /etc/stunnel/stunnel.pem
+client = no
+[dropbear]
+accept = 443
+connect = 127.0.0.1:444
+EOF
+openssl req -new -x509 -days 365 -nodes -out /etc/stunnel/stunnel.pem -keyout /etc/stunnel/stunnel.pem -subj "/CN=golbert19" -quiet; systemctl enable --now stunnel4
+
+mkdir -p /opt/badvpn && cd /opt/badvpn; wget -q https://github.com/ambrop72/badvpn/archive/master.zip; unzip -q master.zip; cd badvpn-master; cmake. -DBUILD_NOTHING_BY_DEFAULT=1 -DBUILD_UDPGW=1 -q; make -j$(nproc) -s; cp ncd/badvpn-udpgw /usr/bin/
+cat > /etc/systemd/system/badvpn.service <<EOF
+[Unit] Description=BadVPN
+After=network.target
+[Service] ExecStart=/usr/bin/badvpn-udpgw --listen-addr 127.0.0.1:7300
+Restart=always
+[Install] WantedBy=multi-user.target
+EOF
+systemctl daemon-reload; systemctl enable --now badvpn
+
+# AGENTE VPN CONECTADO AL PANEL
+cat > /opt/golbert-node.py <<PY
+from fastapi import FastAPI, Header
+import subprocess, os
+app = FastAPI()
+TOKEN = "$TOKEN"
+
+@app.post("/create")
+def create(user: str, pwd: str, days: int, token: str = Header(None)):
+    if token!= TOKEN: return {"error": "no auth"}
+    # Crea usuario Linux real para SSH/Dropbear/SSL/WS/OpenVPN
+    subprocess.call(f"useradd -M -s /bin/false {user} 2>/dev/null; echo '{user}:{pwd}' | chpasswd; chage -E \$(date -d '+{days} days' +%Y-%m-%d) {user}", shell=True)
+    return {"status": "created", "user": user, "days": days}
+
+@app.post("/delete")
+def delete(user: str, token: str = Header(None)):
+    if token!= TOKEN: return {"error": "no auth"}
+    subprocess.call(f"userdel -f {user}", shell=True)
+    return {"status": "deleted"}
+
+@app.get("/")
+def info():
+    return {"node": "golbert19", "protocols": ["SSH:22,444", "Dropbear:443,444", "SSL:443", "BadVPN:7300", "WS:80", "Xray:10000"]}
+PY
+
+cat > /etc/systemd/system/golbert-node.service <<EOF
+[Unit] Description=Golbert Node Agent
+After=network.target
+[Service] ExecStart=/usr/bin/uvicorn golbert-node:app --host 0.0.0.0 --port 8080
+Restart=always
+[Install] WantedBy=multi-user.target
+EOF
+systemctl daemon-reload; systemctl enable --now golbert-node
+echo "NODE LISTO en puerto 8080 conectado a panel $PANEL_IP"
